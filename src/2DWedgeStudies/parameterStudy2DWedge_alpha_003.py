@@ -13,13 +13,14 @@ from os import getcwd,path
 
 if __name__ == '__main__':
     # The working directory
-    os.chdir("/media/timo/sharedParti/cp501/parameterStudies/grid003_parameterStudy_lambdaOb_001")
+    os.chdir("/media/timo/sharedParti/cp501/parameterStudies/grid003_parameterStudy_alpha_003")
     # The varibale range of parameter alpha
-    alpha = linspace(0.001,0.01,5)
+    alpha = linspace(1.25,2.0,4)
     print(alpha)
     
     # The template case
-    template=SolutionDirectory(os.path.join("/media/timo/sharedParti/cp501/parameterStudies/2DWedge_grid003_template_001"))
+    template=SolutionDirectory(os.path.join("/media/timo/sharedParti/cp501/parameterStudies/2DWedge_grid003_template_002"))
+    
     
     for alphai in alpha:
         currentCaseName = "2DWedge_grid003_alpha{}".format(alphai)

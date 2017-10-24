@@ -14,15 +14,15 @@ from os import getcwd,path
 if __name__ == '__main__':
     # The working directory
     os.chdir("/media/timo/sharedParti/cp501/parameterStudies/grid003_parameterStudy_lambdaOb_001")
-    # The varibale range of parameter alpha
-    alpha = linspace(0.001,0.01,5)
-    print(alpha)
+    # The varibale range of parameter lambdaOb
+    lambdaOb = linspace(0.033,0.1,4)
+    print(lambdaOb)
     
     # The template case
-    template=SolutionDirectory(os.path.join("/media/timo/sharedParti/cp501/parameterStudies/2DWedge_grid003_template_001"))
+    template=SolutionDirectory(os.path.join("/media/timo/sharedParti/cp501/parameterStudies/2DWedge_grid003_template_002"))
     
-    for alphai in alpha:
-        currentCaseName = "2DWedge_grid003_alpha{}".format(alphai)
+    for lambdaObi in lambdaOb:
+        currentCaseName = "2DWedge_grid003_lambdaOb{}".format(lambdaObi)
         print(currentCaseName)
         currentCase = template.cloneCase(path.join(getcwd(), currentCaseName))
         
@@ -32,7 +32,7 @@ if __name__ == '__main__':
            
         rheologyDict = parsedPropertiesFile["rheology"]
         print(rheologyDict)
-        alpha_case = rheologyDict.get('alpha')
-        alpha_case[2] = alphai
-        print(alpha_case[2])
+        lambdaOb_case = rheologyDict.get('lambdaOb')
+        lambdaOb_case[2] = lambdaObi
+        print(lambdaOb_case[2])
         parsedPropertiesFile.writeFile()
