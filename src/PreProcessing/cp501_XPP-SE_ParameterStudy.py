@@ -19,7 +19,7 @@ if __name__ == '__main__':
     wd = os.getcwd()
     
     
-    #Importing the paramters from the csv file
+    #Importing the parameters from the csv file
     dataFrame = pd.read_csv('measuredData.csv', header=0)
     dataFrame.drop(0, axis=0, inplace=True)
     dataFrame.drop(list(range(4,25,1)), axis=0, inplace=True)

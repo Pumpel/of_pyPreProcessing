@@ -12,12 +12,12 @@ import os
 from os import getcwd,path
 
 if __name__ == '__main__':
-    os.chdir("/media/timo/linuxSimData/compMultiphaseCavitation_validation/Branches/master/kunz_ParameterStudy")
-    var = linspace(100,150,6)
-    template=SolutionDirectory(os.path.join("/media/timo/linuxSimData/compMultiphaseCavitation_validation/standardSolverCoarseTests_template", "step_coarse_kunz"))
+    os.chdir("/media/timo/linuxSimData/Cavitation/compMultiphaseCavitation_validation/Branches/Features/AcousticCourantNo/RouseMcNown_bluntHead_2D_grid2/parameterStudy_remote")
+    var = linspace(100,900,9)
+    template=SolutionDirectory("/media/timo/linuxSimData/Cavitation/compMultiphaseCavitation_validation/Branches/Features/AcousticCourantNo/RouseMcNown_bluntHead_2D_grid2/RouseMcNown_bluntHead_2D_grid2_coarse_kunz_template")
     
     for vari in var:
-        currentCaseName = "kunz_CcCv_{}".format(vari)
+        currentCaseName = "komegaSST_kunz_CcCv_{}".format(vari)
         print(currentCaseName)
         currentCase = template.cloneCase(path.join(getcwd(), currentCaseName))
         propertiesFilepath = path.join(currentCase.name, "constant", "thermophysicalProperties")
