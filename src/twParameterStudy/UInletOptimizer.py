@@ -1,8 +1,6 @@
 
 from PatchPostProcessing import PatchAverage, PatchMagnitude
-from PyFoam.Applications.PyFoamApplication import PyFoamApplication
 from PyFoam.RunDictionary.SolutionDirectory import SolutionDirectory
-from PyFoam.RunDictionary.ParameterFile import ParameterFile
 from PyFoam.RunDictionary.ParsedParameterFile import ParsedParameterFile
 
 import os
@@ -22,46 +20,63 @@ class Vector(object):
 
 class UInletOptimizer(object):
 
-#goal : 5.245 U inlet -> Re = 1.35e5
-    #0.0254 m
-    #9.7937E-7 m^2 / s
 
-
-    def __init__(self):
-        self.studyName = "hemisphHead_grid8_2_3_U1_36k_K0_4_U5_25_study001"
-        self.studyTemplate = "/media/timo/linuxSimData/Cavitation/compMultiphaseCavitation_validation/templates/pythonScript_development_templates/hemisphericalHead_2D_grid8_2_3_totalpmyWave_U5_K0_4_template"
-        self.cwd = "/media/timo/linuxSimData/Cavitation/compMultiphaseCavitation_validation/templates/pythonScript_development_templates/"
+    def __init__(self, 
+                 studyName="Study000",
+                 workingDirectory=None,
+                 studyTemplate=None,
+                 maxIters=4,
+                 Ugoal=None,
+                 residual=None,
+                 T1_p_Lbound=None,
+                 T1_p_Ubound=None,
+                 relDistToBound=0.03):
         
-        os.chdir(self.cwd)
-        os.mkdir(self.studyName)
-        self.studyWorkingDirectory = self.cwd + self.studyName
-
+        # Folder name for the study. Simulations are stored in a folder with this name
+        self.studyName = studyName
+        # Template study to be used for the study. The template gets copied, only then
+        # the copy is modified.
+        self.studyTemplate = studyTemplate
+        # The working directy is the directy, where the 'studyName' folder will be created
+        self.cwd = workingDirectory
+        # Changing to the working directory and creating the study
+        self.prepareFolders()
+        # Creating the pyFoam representation of the template case
         self.sol = SolutionDirectory(self.studyTemplate)
+        
         self.iteration = 0
-        self.maxIter = 10
-
+        self.maxIters = maxIters
+        self.Ugoal = Ugoal
+        self.residual = residual
+        self.T1_p_Lbound = T1_p_Lbound
+        self.T1_p_Ubound = T1_p_Ubound
+        self.relDistToBound = relDistToBound
+        
+        # The simulationsDict holds the names of all simulations as keys and 
+        # stores a pandas data frame with all relevant simulation results as the values
+        self.simulationsDict = dict()
         self.t1new = None
-        self.newPrghTable = list()
-        self.newDeltaPDomain = 25
-        self.targetSigma = 0.8
+        #self.newDeltaPDomain = 25
+        #self.targetSigma = 0.8
 
+
+        # Variables for the Patch calculations
         self.p_outlet = None
         self.p_inlet = None
         self.U_inlet_mag = None
         self.U_inlet_avgmag = None
 
-        # For Re = 1.36k
-        self.Ugoal = 5.245
-
-        self.simulationsDict = dict()
-        self.residual = 3
 
 
-    def setInitialValues(self, case):
-        U = Vector(0,0,0)
-        p = 2500000
-        prgh = 2500000
-   
+
+    def prepareFolders(self):
+        os.chdir(self.cwd)
+        os.mkdir(self.studyName)
+        self.studyWorkingDirectory = self.cwd + self.studyName
+
+    # Here, custom intial values for the copied template case may be 
+    # defined
+    def setInitialValues(self,case, U, p, prgh):
         parsedU = os.path.join(case.name, "0.000000/U")
         parsedU = ParsedParameterFile(parsedU)
         #p
@@ -79,21 +94,32 @@ class UInletOptimizer(object):
         parsedP.writeFile()
         parsedPrgh.writeFile()
     
+    # Definitions:
+    # The table is the dictionary object obtained from the parsed 
+    # parameter file
+    # The table is read from the parsed parameter file and the entries are stored
+    # as a list:
+    # ['table', [ [x1, y1], [x2,y2], ... ] ]
 
-    def changeTimes(self, deltaT, tStart, table):
+    # This functions adds the value deltaT to all x-values (i.e. times) GREATER
+    # the given tStart value in the provided table
+    def addDTInTable(self, deltaT, tStart, table):
         table = table[1]
         for i in range(len(table)):
             if table[i][0] > tStart:
                 table[i][0] = table[i][0] + deltaT
         return table
-
-    def changeValues(self, value, value_n, table):
+    
+    # This function replaces every y-entry equal to the variable value with
+    # the new variable value_n
+    def changeAllValuesInTable(self, value, value_n, table):
         table = table[1]
         for i in range(len(table)):
             if table[i][1] == value:
                 table[i][1] = value_n
         return table
 
+    # This function changes only the second x-value of the given table
     def changeT1(self, value_n, table):
         table = table[1]
         for i in range(len(table)):
@@ -109,39 +135,63 @@ class UInletOptimizer(object):
                 res = table[i][0]
         return res
     
-    
-    def boundingT1(self, t1new, bound_l, bound_u, relDistToBounds):
+    # Bounds the t1new value according to the lower bound and upper bound with
+    # a rel distant the the bounds
+    def biDirectionalBounding(self, t1new, bound_l, bound_u, relDistToBounds):
         relD = relDistToBounds
         # The new T1 value cannot be equal to his bounding values. 
         # Doing so, yields a non-valid table for the BC in question
         return max((bound_l+bound_u*relD), min((bound_u-bound_u*relD), t1new))
 
+    # Modify this function to suite the specific OpenFOAM case
+    def runBashCommands(self, currentCase):
+        try:
+            os.chdir(currentCase.name)
+            #Running the simulation
+            subprocess.call("cd ${0%/*} || exit 1", shell=True)
+            subprocess.call(". $WM_PROJECT_DIR/bin/tools/RunFunctions", shell=True)
+            #subprocess.call("rm -vf log.decomposePar; rm -rf processor*", shell=True)
+            #subprocess.call(['cp', '-r', '0.000000.orig', '0.000000'], shell=True)
+            subprocess.call('decomposePar -latestTime > log.decomposePar', shell=True)
+            subprocess.call("mpirun -np 4 compMultiphaseCavitation -parallel > log.run1", shell=True)
+            subprocess.call('reconstructPar -newTimes > log.reconstructPar', shell=True)
+            #subprocess.call("rm -v log.reconstructPar; rm -rf processor*, shell=True)
+        except:
+            print("Error while executing the OpenFOAM commands")
         
+
+    # Calling this function sets of the calculation    
     def run(self):
-        print("Running main loop for a maximum of {} iterations".format(self.maxIter))
-        while (self.iteration < self.maxIter and self.residual > 0.001): #The residual calculation doesnt mean shit yet. 
-            # Leave it out to avoid unexpected bahaviour
+        print("Running main loop for a maximum of {} iterations".format(self.maxIters))
+        while (self.iteration < self.maxIters and self.residual > 0.001): 
+            #The residual calculation doesnt mean shit yet. 
+            # Leave it out to avoid unexpected behaviour
+            
+            
             os.chdir(self.studyWorkingDirectory)
+            # Create the case name based on the current iteration
             caseName = "sim" + str(self.iteration)
 
-            #Cloning the template case
+            # Cloning the template case to a folder name caseName
             cloneCasePath = os.path.join(self.studyWorkingDirectory, caseName)
             currentCase = self.sol.cloneCase(cloneCasePath)
+            # Copying the run file manually, cause pyFoam doensnt do it by default
             shutil.copyfile(self.studyTemplate + "/run", cloneCasePath + "/run")
             os.chdir(currentCase.name)
 
-            #parsing the prgh file
+            # Parsing the prgh file
             parsedPrgh = os.path.join(currentCase.name, "0.000000/p_rgh")
             parsedPrgh = ParsedParameterFile(parsedPrgh)
             prghTable = parsedPrgh["boundaryField"]["Inlet"]["uniformValue"]
 
-            #The bound of T1. For prototyping, they are set manually
-            t1Bound_l = 0.0
-            t1Bound_u = 0.21
+            ##################################################################
+            # Two simulations are performed first, to obtain two data points.
+            # From there, the new time values of the table are calculated
+            # by linear interpolation.
+            ##################################################################
 
             #first simulation
             if self.iteration == 0:
-                self.setInitialValues(currentCase)
                 t1new = self.getT1Value(prghTable)
             #second simulation
             elif self.iteration == 1:
@@ -149,6 +199,7 @@ class UInletOptimizer(object):
                 Ulist0 = self.simulationsDict[sim0]["magU_in"].tolist()
                 u1 = Ulist0[-1]
                 u2 = self.Ugoal
+                # Getting the time value of the first simulation
                 t1 = self.simulationsDict[sim0]["t1new"].tolist()[-1]
                 
                 # Check if the value of sim1 is lower than the goal. If true, choose the new time
@@ -165,14 +216,13 @@ class UInletOptimizer(object):
                     # Mathematically this is bogus, but it yields a reasonable t1 value
                     # for the second simulation
                     t1new = t2 + (Dt21)/(DU21) * (self.Ugoal-u2)
-                    #Bounding the T1 time
-                    #t1new = max((0+0.07/10), min((0.07-0.07/10), t1new))
-                    t1new = self.boundingT1(t1new, t1Bound_l, t1Bound_u, 0.03)
+                    t1new = self.biDirectionalBounding(t1new, 
+                                                       self.T1_p_Lbound, 
+                                                       self.T1_p_Ubound, 
+                                                       self.relDistToBound)
                 else:
                     t1new = t2
-                parsedPrgh["boundaryField"]["Inlet"]["uniformValue"] = self.changeT1(t1new, prghTable)
-                parsedPrgh.writeFile()
-            #all following simulations
+            # All following simulations
             elif self.iteration >= 1:
                 # Reading in the U,T1 values for the last to simulations
                 sim1 = "sim" + str((self.iteration - 2))
@@ -189,27 +239,23 @@ class UInletOptimizer(object):
                     t1new = t2 + (Dt21)/(DU21) * (self.Ugoal-u2)
                     #Bounding the T1 time
                     #t1new = max((0+0.07/10), min((0.07-0.07/10), t1new))
-                    t1new = self.boundingT1(t1new, t1Bound_l, t1Bound_u, 0.03)
+                    t1new = self.biDirectionalBounding(t1new, 
+                                                       self.T1_p_Lbound, 
+                                                       self.T1_p_Ubound, 
+                                                       self.relDistToBound)
                 else:
                     t1new = t2
-                parsedPrgh["boundaryField"]["Inlet"]["uniformValue"] = self.changeT1(t1new, prghTable)
-                parsedPrgh.writeFile()
+            
+                    
+            parsedPrgh["boundaryField"]["Inlet"]["uniformValue"] = self.changeT1(t1new, prghTable)
+            parsedPrgh.writeFile()
                 
             print("Iteration {} running with the new time set to T1 = {}".format(self.iteration,t1new))
 
-            try:
-                os.chdir(currentCase.name)
-                #Running the simulation
-                subprocess.call("cd ${0%/*} || exit 1", shell=True)
-                subprocess.call(". $WM_PROJECT_DIR/bin/tools/RunFunctions", shell=True)
-                #subprocess.call("rm -vf log.decomposePar; rm -rf processor*", shell=True)
-                #subprocess.call(['cp', '-r', '0.000000.orig', '0.000000'], shell=True)
-                subprocess.call('decomposePar -latestTime > log.decomposePar', shell=True)
-                subprocess.call("mpirun -np 4 compMultiphaseCavitation -parallel > log.run1", shell=True)
-                subprocess.call('reconstructPar -newTimes > log.reconstructPar', shell=True)
-                #subprocess.call("rm -v log.reconstructPar; rm -rf processor*, shell=True)
-            except:
-                print("Error while executing the OpenFOAM commands")
+            
+
+            self.runBashCommands(currentCase)
+
 
 
             #Writing all info of the current simulation in to the df_plotting dataFrame
@@ -275,7 +321,26 @@ class UInletOptimizer(object):
 
             self.iteration = self.iteration + 1
             
+            
+            
+            
+            
 if __name__ == "__main__":
-    Uoptimizer = UInletOptimizer()
+    
+    studyName = "DebugStudy001"
+    studyTemplate = "/media/timo/linuxSimData/Cavitation/compMultiphaseCavitation_validation/templates/pythonScript_development_templates/hemisphericalHead_2D_grid8_2_3_totalpmyWave_U5_K0_4_template"
+    cwd = "/media/timo/linuxSimData/Cavitation/compMultiphaseCavitation_validation/templates/pythonScript_development_templates/"
+        
+    # For Re = 1.36k, Ugoal=5.245
+    Uoptimizer = UInletOptimizer(studyName,
+                                cwd,
+                                studyTemplate,
+                                maxIters=4,
+                                Ugoal=5.245,  
+                                residual=3,
+                                T1_p_Lbound=0.025,
+                                T1_p_Ubound=0.09,
+                                relDistToBound=0.03)
+    
     Uoptimizer.run()
     
